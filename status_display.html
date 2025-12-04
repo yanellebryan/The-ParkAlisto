@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parking Status Display</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-white">
+    <div class="container mx-auto p-8">
+        <div class="text-center mb-12">
+            <h1 class="text-6xl font-black text-emerald-400 mb-4">PARKING STATUS</h1>
+            <p class="text-2xl text-slate-400">La Salle Parking - Combined Overview</p>
+        </div>
+
+        <!-- Combined Totals -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+            <!-- Available Spots -->
+            <div class="bg-slate-800 p-8 rounded-3xl border-4 border-emerald-500 shadow-2xl">
+                <div class="text-center">
+                    <p class="text-2xl font-semibold text-slate-400 mb-4">AVAILABLE</p>
+                    <p id="available-count" class="text-8xl font-black text-emerald-400">0</p>
+                    <p class="text-xl text-slate-400 mt-4">Spots Open</p>
+                </div>
+            </div>
+
+            <!-- Occupied Spots -->
+            <div class="bg-slate-800 p-8 rounded-3xl border-4 border-red-500 shadow-2xl">
+                <div class="text-center">
+                    <p class="text-2xl font-semibold text-slate-400 mb-4">OCCUPIED</p>
+                    <p id="occupied-count" class="text-8xl font-black text-red-400">0</p>
+                    <p class="text-xl text-slate-400 mt-4">Spots Taken</p>
+                </div>
+            </div>
+
+            <!-- Total Spots -->
+            <div class="bg-slate-800 p-8 rounded-3xl border-4 border-indigo-500 shadow-2xl">
+                <div class="text-center">
+                    <p class="text-2xl font-semibold text-slate-400 mb-4">TOTAL</p>
+                    <p id="total-count" class="text-8xl font-black text-indigo-400">0</p>
+                    <p class="text-xl text-slate-400 mt-4">Total Spots</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Occupancy Bar -->
+        <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-2xl mb-12">
+            <p class="text-2xl font-semibold text-slate-400 mb-6 text-center">OCCUPANCY RATE</p>
+            <div class="relative w-full h-16 bg-slate-700 rounded-full overflow-hidden">
+                <div id="occupancy-bar" class="h-full bg-gradient-to-r from-emerald-500 to-red-500 transition-all duration-1000 ease-out" style="width: 0%"></div>
+            </div>
+            <p id="occupancy-percent" class="text-5xl font-black text-center mt-6 text-white">0%</p>
+        </div>
+
+        <!-- Individual Lot Breakdown -->
+        <div class="mb-8">
+            <h2 class="text-3xl font-bold text-slate-300 mb-6 text-center">Individual Parking Lots</h2>
+            <div id="lots-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Lots will be dynamically inserted here -->
+            </div>
+        </div>
+
+        <div class="text-center mt-12">
+            <p id="last-update" class="text-xl text-slate-500">Last updated: N/A</p>
+        </div>
+    </div>
+
+    <script>
+        async function updateData() {
+            try {
+                const response = await fetch('http://localhost:5000/data?_=' + new Date().getTime());
+                if (!response.ok) throw new Error('Failed to fetch');
+                
+                const dataArray = await response.json();
+                
+                // Combine data from all parking lots
+                let totalOccupied = 0;
+                let totalSpots = 0;
+                let lastUpdate = 'N/A';
+                
+                if (Array.isArray(dataArray) && dataArray.length > 0) {
+                    dataArray.forEach(lot => {
+                        totalOccupied += lot.occupied || 0;
+                        totalSpots += lot.total || 0;
+                    });
+                    lastUpdate = dataArray[0].last_update || 'N/A';
+                    
+                    // Update individual lot displays
+                    updateIndividualLots(dataArray);
+                }
+                
+                const available = Math.max(0, totalSpots - totalOccupied);
+                const occupancyPercent = totalSpots > 0 ? Math.round((totalOccupied / totalSpots) * 100) : 0;
+
+                document.getElementById('available-count').textContent = available;
+                document.getElementById('occupied-count').textContent = totalOccupied;
+                document.getElementById('total-count').textContent = totalSpots;
+                document.getElementById('occupancy-percent').textContent = `${occupancyPercent}%`;
+                document.getElementById('occupancy-bar').style.width = `${occupancyPercent}%`;
+                document.getElementById('last-update').textContent = `Last updated: ${lastUpdate}`;
+            } catch (error) {
+                console.error('Failed to fetch data:', error);
+                document.getElementById('last-update').textContent = 'Last updated: ERROR';
+            }
+        }
+
+        function updateIndividualLots(dataArray) {
+            const lotsContainer = document.getElementById('lots-container');
+            lotsContainer.innerHTML = '';
+            
+            dataArray.forEach((lot, index) => {
+                const available = Math.max(0, lot.total - lot.occupied);
+                const occupancyPercent = lot.total > 0 ? Math.round((lot.occupied / lot.total) * 100) : 0;
+                
+                // Determine border color based on availability
+                let borderColor = 'border-emerald-500';
+                if (occupancyPercent >= 90) {
+                    borderColor = 'border-red-500';
+                } else if (occupancyPercent >= 70) {
+                    borderColor = 'border-yellow-500';
+                }
+                
+                const lotCard = document.createElement('div');
+                lotCard.className = `bg-slate-800 p-6 rounded-2xl border-2 ${borderColor} shadow-xl`;
+                lotCard.innerHTML = `
+                    <div class="text-center">
+                        <h3 class="text-xl font-bold text-slate-300 mb-4">${lot.lot_name || 'Lot ' + (index + 1)}</h3>
+                        <div class="grid grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">Available</p>
+                                <p class="text-3xl font-black text-emerald-400">${available}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">Occupied</p>
+                                <p class="text-3xl font-black text-red-400">${lot.occupied}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-400 mb-1">Total</p>
+                                <p class="text-3xl font-black text-indigo-400">${lot.total}</p>
+                            </div>
+                        </div>
+                        <div class="relative w-full h-4 bg-slate-700 rounded-full overflow-hidden mb-2">
+                            <div class="h-full bg-gradient-to-r from-emerald-500 to-red-500 transition-all duration-1000" style="width: ${occupancyPercent}%"></div>
+                        </div>
+                        <p class="text-2xl font-bold text-white">${occupancyPercent}% Full</p>
+                        ${lot.pending > 0 ? `<p class="text-xs text-yellow-400 mt-2">⏳ ${lot.pending} pending</p>` : ''}
+                    </div>
+                `;
+                lotsContainer.appendChild(lotCard);
+            });
+        }
+
+        // Update every 2 seconds
+        updateData();
+        setInterval(updateData, 2000);
+    </script>
+</body>
+</html>
