@@ -1,3 +1,7 @@
+# Just a note:
+# This is a list of my MacBook dependencies that are compatible with my older model.
+# Feel free to use more recent libraries or versions if you are on Windows.
+
 annotated-types==0.7.0
 anyio==4.10.0
 blinker==1.9.0
