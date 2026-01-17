@@ -1,0 +1,47 @@
+/* Tailwind CSS included via CDN, this file for custom overrides */
+
+body { font-family: 'Inter', sans-serif; }
+.glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); }
+
+/* Smooth fade transitions for List Items */
+.list-item-enter {
+    animation: slideDownFade 0.5s ease-out forwards;
+}
+
+@keyframes slideDownFade {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+        max-height: 0;
+        margin-bottom: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        max-height: 200px; /* Arbitrary large height */
+        margin-bottom: 0.75rem; /* Equivalent to space-y-3 */
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+    }
+}
+
+.fade-in { animation: fadeIn 0.5s ease-in-out; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.spinner {
+    border: 3px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top: 3px solid #34d399;
+    width: 20px;
+    height: 20px;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* Custom Scrollbar for the list */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }

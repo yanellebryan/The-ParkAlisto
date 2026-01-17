@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+      - ./plate_screenshots:/app/plate_screenshots
+    environment:
+      - FLASK_ENV=development
+      - TZ=Asia/Manila
+    restart: unless-stopped

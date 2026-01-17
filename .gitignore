@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Unit test / coverage
+.tox/
+.coverage
+htmlcov/
+
+# Flask
+instance/
+.webassets-cache
+
+# Mac
+.DS_Store
+
+# IDEs
+.idea/
+.vscode/
+
+# Project specific
+uploads/*
+!uploads/.gitkeep
+plate_screenshots/*
+!plate_screenshots/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Redundant / Legacy
+The-ParkAlisto/
+legacy_backup/
