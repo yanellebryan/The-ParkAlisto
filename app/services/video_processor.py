@@ -1,45 +1,67 @@
 import time
 import cv2
 import numpy as np
+import os
 from datetime import datetime
 from config import Config
 from app.core import system_state
 from app.models import ParkingSpotTracker, ProcessingTask
 from app.utils.parking_helpers import load_parking_mask, get_parking_spots, get_occupying_vehicle
+from app.utils.ffmpeg_capture import FFmpegVideoCapture
 from .ai_detector import vehicle_detector
 
 def process_video_loop(config):
     """Process a single video feed."""
     print(f"[Started] Processing thread for {config.lot_name} (Source: {config.video_path})")
     
-    video_source = config.video_path
-    if isinstance(video_source, str) and video_source.isdigit():
-        video_source = int(video_source)
+    try:
+        video_source = config.video_path
+        if isinstance(video_source, str) and video_source.isdigit():
+            video_source = int(video_source)
+            
+        print(f"DEBUG: Attempting to open video source: {video_source}")
         
-    cap = cv2.VideoCapture(video_source)
-    if not cap.isOpened():
-        print(f"Error: Could not open video for lot {config.lot_id}: {video_source}")
+        cap = None
+        is_rtsp = isinstance(video_source, str) and video_source.startswith('rtsp')
+        
+        if is_rtsp:
+            print("DEBUG: Detected RTSP stream, using FFmpegVideoCapture backend.")
+            cap = FFmpegVideoCapture(video_source)
+        else:
+            print("DEBUG: Detected file/device, using cv2.VideoCapture.")
+            cap = cv2.VideoCapture(video_source)
+        
+        if not cap.isOpened():
+            print(f"Error: Could not open video for lot {config.lot_id}: {video_source}")
+            return
+        else:
+            print(f"DEBUG: Successfully opened video source: {video_source}")
+
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        print(f"[{config.lot_name}] Video: {width}x{height} @ {fps}fps")
+
+        mask = load_parking_mask(config.mask_path, width, height)
+        parking_spots = get_parking_spots(mask)
+        total_spots = len(parking_spots)
+        print(f"[{config.lot_name}] Detected {total_spots} parking spots")
+        
+        spot_trackers = {
+            i: ParkingSpotTracker(
+                i + 1,
+                Config.OCCUPANCY_CONFIRMATION_TIME,
+                Config.VACANCY_CONFIRMATION_TIME,
+                Config.SCREENSHOT_DELAY_AFTER_CONFIRMATION
+            )
+            for i, _ in enumerate(parking_spots)
+        }
+
+    except Exception as e:
+        print(f"CRITICAL ERROR in process_video_loop for {config.lot_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return
-
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    print(f"[{config.lot_name}] Video: {width}x{height} @ {fps}fps")
-
-    mask = load_parking_mask(config.mask_path, width, height)
-    parking_spots = get_parking_spots(mask)
-    total_spots = len(parking_spots)
-    print(f"[{config.lot_name}] Detected {total_spots} parking spots")
-    
-    spot_trackers = {
-        i: ParkingSpotTracker(
-            i + 1,
-            Config.OCCUPANCY_CONFIRMATION_TIME,
-            Config.VACANCY_CONFIRMATION_TIME,
-            Config.SCREENSHOT_DELAY_AFTER_CONFIRMATION
-        )
-        for i, _ in enumerate(parking_spots)
-    }
 
     start_time = time.time()
     frame_count = 0
@@ -47,8 +69,13 @@ def process_video_loop(config):
     while True:
         ret, frame = cap.read()
         if not ret:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            continue
+            # If it's a file, loop. If it's RTSP, break (auto-reconnect logic could go here)
+            if not is_rtsp:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            else:
+                print(f"[{config.lot_name}] RTSP stream ended or failed.")
+                break
 
         frame_count += 1
         if frame_count % Config.FRAME_SKIP_RATE != 0:
@@ -150,44 +177,16 @@ def process_video_loop(config):
         time.sleep(0.01)
 
 def update_combined_frame():
-    frames = []
-    for config in system_state.video_configs:
-        with config.frame_lock:
-            if config.frame is not None:
-                frames.append(config.frame.copy())
+    # DISABLING stitching to prevent crashes and enable client-side grid view
+    # frames = []
+    return
     
-    if not frames: 
-        return
-    
-    try:
-        combined = None
-        if len(frames) == 1:
-            combined = frames[0]
-        else:
-            max_h = max(f.shape[0] for f in frames)
-            resized_frames = []
-            for f in frames:
-                h, w = f.shape[:2]
-                if h != max_h:
-                    f = cv2.resize(f, (int(w * max_h / h), max_h))
-                resized_frames.append(f)
-            
-            if len(frames) < 3:
-                combined = np.hstack(resized_frames)
-            else:
-                rows = []
-                for i in range(0, len(resized_frames), 2):
-                    row_frames = resized_frames[i:i+2]
-                    if len(row_frames) == 1:
-                        rows.append(row_frames[0])
-                    else:
-                        rows.append(np.hstack(row_frames))
-                combined = np.vstack(rows)
-            
-        with system_state.combined_frame_lock:
-            system_state.combined_frame = combined
-    except Exception as e:
-        print(f"Error combining frames: {e}")
+    # Logic below is disabled
+    # for config in system_state.video_configs:
+    #     with config.frame_lock:
+    #         if config.frame is not None:
+    #             frames.append(config.frame.copy())
+    # ...
 
 # Logging helpers local to this service or imported?
 # They manipulate config state which is passed.

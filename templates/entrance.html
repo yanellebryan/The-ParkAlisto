@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entrance Display - ParkAlisto</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="{{ url_for('static', filename='js/lucide.min.js') }}"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+
+<body class="bg-black text-white h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center p-8 bg-slate-900/50 border-b border-slate-800">
+        <div class="flex items-center space-x-6">
+            <img src="{{ url_for('static', filename='images/white_lasalle.png') }}" class="h-20 object-contain">
+            <div>
+                <h1 class="text-4xl font-bold tracking-tight text-white uppercase">Welcome Visitors</h1>
+                <p class="text-xl text-slate-400">Real-time Parking Availability</p>
+            </div>
+        </div>
+        <div class="text-right">
+            <div id="clock" class="text-5xl font-mono font-bold text-white">--:-- AM</div>
+            <div id="date" class="text-xl text-slate-400 mt-2">--</div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow flex p-8 gap-8">
+
+        <!-- Left: Huge Availability Counter -->
+        <div class="w-1/2 flex flex-col">
+            <div id="status-card"
+                class="flex-grow bg-slate-900 rounded-3xl border-4 border-emerald-500/50 flex flex-col items-center justify-center p-12 transition-colors duration-500 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+                <span class="text-3xl text-slate-400 font-bold uppercase tracking-[0.2em] mb-4">Available Spots</span>
+                <div id="total-available" class="text-[15rem] leading-none font-black text-white drop-shadow-2xl">--
+                </div>
+                <div id="status-text" class="text-6xl font-black text-emerald-400 mt-8 uppercase">OPEN</div>
+            </div>
+        </div>
+
+        <!-- Right: Lot Details -->
+        <div class="w-1/2 flex flex-col gap-6">
+            <div class="bg-slate-900/80 rounded-3xl p-8 border border-slate-800 flex-grow">
+                <h2 class="text-3xl font-bold text-white mb-8 border-b border-slate-700 pb-4 flex items-center">
+                    <i data-lucide="map-pin" class="w-8 h-8 mr-4 text-indigo-400"></i>
+                    Zone Status
+                </h2>
+                <div id="lot-list" class="space-y-6">
+                    <!-- Dynamic Rows -->
+                    <div class="animate-pulse text-2xl text-slate-500">Connecting...</div>
+                </div>
+            </div>
+
+            <!-- Recommendation Banner -->
+            <div class="bg-indigo-900/50 border border-indigo-500/30 rounded-3xl p-8 flex items-center justify-between">
+                <div>
+                    <div class="text-indigo-300 text-lg uppercase font-bold mb-1">Recommendation</div>
+                    <div id="recommendation-text" class="text-4xl font-bold text-white">Please Proceed to Entry</div>
+                </div>
+                <i data-lucide="arrow-right-circle" class="w-16 h-16 text-indigo-400"></i>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = 'http://localhost:5000';
+
+        function updateDateTime() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+            document.getElementById('date').innerText = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+        }
+        setInterval(updateDateTime, 1000);
+        updateDateTime();
+
+        async function fetchStats() {
+            try {
+                const response = await fetch(`${API_BASE}/stats/global`);
+                const data = await response.json();
+
+                // Main Counter
+                const available = data.total_available;
+                const counterEl = document.getElementById('total-available');
+                const statusCard = document.getElementById('status-card');
+                const statusText = document.getElementById('status-text');
+
+                counterEl.innerText = available;
+
+                if (available === 0) {
+                    statusCard.classList.remove('border-emerald-500/50', 'shadow-[0_0_50px_rgba(16,185,129,0.2)]');
+                    statusCard.classList.add('border-red-500/50', 'shadow-[0_0_50px_rgba(239,68,68,0.2)]');
+                    statusText.innerText = "FULL";
+                    statusText.className = "text-6xl font-black text-red-500 mt-8 uppercase";
+                } else {
+                    statusCard.classList.add('border-emerald-500/50', 'shadow-[0_0_50px_rgba(16,185,129,0.2)]');
+                    statusCard.classList.remove('border-red-500/50', 'shadow-[0_0_50px_rgba(239,68,68,0.2)]');
+                    statusText.innerText = "OPEN";
+                    statusText.className = "text-6xl font-black text-emerald-400 mt-8 uppercase";
+                }
+
+                // Lot List
+                const list = document.getElementById('lot-list');
+                let bestLot = null;
+                let maxFree = -1;
+
+                const rows = data.lot_stats.map(lot => {
+                    const free = lot.available;
+                    const total = lot.total;
+                    const percent = total > 0 ? Math.round((lot.occupied / total) * 100) : 0;
+
+                    if (free > maxFree) {
+                        maxFree = free;
+                        bestLot = lot.lot_name;
+                    }
+
+                    let color = "text-emerald-400";
+                    let text = "OPEN";
+                    if (free === 0) {
+                        color = "text-red-500";
+                        text = "FULL";
+                    } else if (percent > 80) {
+                        color = "text-yellow-400";
+                        text = "BUSY";
+                    }
+
+                    return `
+                        <div class="flex items-center justify-between bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+                            <div class="flex items-center">
+                                <span class="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center text-xl font-bold text-white mr-4">${lot.lot_id + 1}</span>
+                                <div>
+                                    <div class="text-2xl font-bold text-white">${lot.lot_name}</div>
+                                    <div class="text-slate-400">${free} spaces free</div>
+                                </div>
+                            </div>
+                            <div class="text-3xl font-black ${color}">${text}</div>
+                        </div>
+                    `;
+                }).join('');
+
+                list.innerHTML = rows;
+
+                // Recommendation
+                if (available === 0) {
+                    document.getElementById('recommendation-text').innerText = "Parking Full - Please Wait";
+                } else if (bestLot) {
+                    document.getElementById('recommendation-text').innerText = `Proceed to ${bestLot}`;
+                }
+
+            } catch (e) {
+                console.error("Stats error:", e);
+            }
+        }
+
+        setInterval(fetchStats, 2000);
+        fetchStats();
+    </script>
+</body>
+
+</html>

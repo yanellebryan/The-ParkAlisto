@@ -7,12 +7,24 @@ class AIDetector:
         self.model = None
         
     def load_model(self):
-        print("Loading YOLOv5 Model...")
+        print("Loading YOLOv5 Model (Local Cache)...")
         try:
-            self.model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
+            import os
+            # Use the cached ultralytics_yolov5_master repo found in ~/.cache/torch/hub
+            # This avoids the 'ultralytics' package trying to download/update the model weights
+            hub_path = os.path.expanduser('~/.cache/torch/hub/ultralytics_yolov5_master')
+            
+            if not os.path.exists(hub_path):
+                 print(f"Error: Cached YOLOv5 repo not found at {hub_path}")
+                 return
+
+            # Load using torch.hub from local source
+            self.model = torch.hub.load(hub_path, 'custom', path='yolov5s.pt', source='local')
+            
+            # Configure model settings
             self.model.conf = 0.25
             self.model.iou = 0.45
-            print("✓ YOLOv5 loaded successfully")
+            print(f"✓ YOLOv5 loaded from local cache")
         except Exception as e:
             print(f"Error loading YOLOv5: {e}")
     
@@ -22,22 +34,14 @@ class AIDetector:
             if self.model is None:
                 return []
                 
+        # Inference using the torch hub model (pandas results)
         results = self.model(frame)
         vehicle_info_list = []
         
         try:
+            # The torch hub model returns a Detections object where .pandas().xyxy[0] works
             det = results.pandas().xyxy[0]
-            # Assuming frame is already resized to PROCESSING_WIDTH/HEIGHT passed to detect?
-            # Or detect takes full frame?
-            # In parkalisto.py, frame is resized before passing to model.
-            # But here let's assume we pass the frame as is and get results relative to it?
-            # Wait, parkalisto.py logic:
-            # processed_frame = cv2.resize(frame, (PROCESSING_WIDTH, PROCESSING_HEIGHT))
-            # results = model(processed_frame)
-            # scale_x = width / PROCESSING_WIDTH ...
             
-            # Use raw results here, scaling handled by caller or here if we pass orig dims.
-            # Let's return the simplified detection data.
             for _, d in det.iterrows():
                 if int(d['class']) in VEHICLE_CLASSES:
                     vehicle_info_list.append({

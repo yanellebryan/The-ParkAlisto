@@ -6,11 +6,165 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ParkAlisto Analytics</title>
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='vendor/tailwindcss.js') }}"></script>
     <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <!-- Lucide Icons -->
+    <script src="{{ url_for('static', filename='js/lucide.min.js') }}"></script>
+    <style>
+        /* Video Grid Styles */
+        .video-cell {
+            position: relative;
+            background: transparent;
+            border-radius: 1rem;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid #334155;
+            min-height: 200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-cell:hover {
+            border-color: #10b981;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            z-index: 10;
+        }
+
+        .video-cell img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            max-height: 100%;
+        }
+
+        /* Fullscreen View */
+        .fullscreen-view {
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999;
+            background: #0f172a;
+            /* Slate 950 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            border-radius: 0 !important;
+        }
+
+        .fullscreen-view img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Hide header/controls when container is fullscreen */
+        .fullscreen-view .grid-header {
+            display: none !important;
+        }
+
+        /* Hide info overlays in fullscreen unless hovered */
+        .fullscreen-view .lot-info-overlay {
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .fullscreen-view:hover .lot-info-overlay {
+            opacity: 1;
+        }
+
+        .fullscreen-close {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: rgba(15, 23, 42, 0.8);
+            color: white;
+            padding: 12px;
+            border-radius: 9999px;
+            cursor: pointer;
+            z-index: 10001;
+            display: none;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.2s;
+        }
+
+        .fullscreen-close:hover {
+            transform: scale(1.1);
+            background: rgba(15, 23, 42, 1);
+        }
+
+        .fullscreen-view .fullscreen-close {
+            display: block;
+        }
+
+        /* Scrollbar styling */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 9999px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* New Overlay Style - Glassmorphic Pill */
+        .lot-info-overlay {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            bottom: auto;
+            right: auto;
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 6px 14px;
+            border-radius: 9999px;
+            color: white;
+            font-size: 0.875rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            pointer-events: none;
+        }
+
+        .lot-info-overlay i {
+            width: 14px;
+            height: 14px;
+            color: #34d399;
+            /* Emerald-400 */
+        }
+
+        .video-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #0f172a;
+            color: #64748b;
+        }
+    </style>
 </head>
 
 <body class="bg-slate-950 text-slate-200">
@@ -32,27 +186,66 @@
                 </div>
 
                 <div class="flex justify-center pt-4">
-                    <button type="button" onclick="addLotRow()"
-                        class="flex items-center space-x-2 text-emerald-400 hover:text-emerald-300 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="10" />
-                            <line x1="12" x2="12" y1="8" y2="16" />
-                            <line x1="8" x2="16" y1="12" y2="12" />
-                        </svg>
-                        <span>Add Another Parking Lot</span>
-                    </button>
+                    <div class="flex justify-center pt-4">
+                        <button type="button" onclick="addLotRow()"
+                            class="flex items-center space-x-2 text-emerald-400 hover:text-emerald-300 transition-colors">
+                            <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                            <span>Add Another Parking Lot</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="border-t border-slate-700 pt-6 flex justify-end">
                     <button type="submit" id="start-btn"
                         class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center space-x-2">
                         <span>Start System</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M5 12h14" />
-                            <path d="m12 5 7 7-7 7" />
-                        </svg>
+                        <i data-lucide="play-circle" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= ADD SOURCE MDOAL ================= -->
+    <div id="add-source-modal" class="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-6 w-full max-w-lg fade-in">
+            <h2 class="text-xl font-bold text-white mb-4">Add New Camera Stream</h2>
+            <form id="add-source-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Lot Name</label>
+                    <input type="text" name="lot_name" placeholder="e.g. West Wing Parking" required
+                        class="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Mask Image</label>
+                    <input type="file" name="mask_file" accept="image/*" required
+                        class="w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">Video Source</label>
+                    <select onchange="toggleAddSourceVideoInput(this.value)" name="video_type"
+                        class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white mb-2">
+                        <option value="file">Upload Video File</option>
+                        <option value="url">RTSP Stream / URL / Local Path</option>
+                    </select>
+
+                    <input type="file" id="add-vid-file" name="video_file" accept="video/*"
+                        class="w-full bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500">
+
+                    <input type="text" id="add-vid-url" name="video_url" placeholder="rtsp://... or 0 for Webcam"
+                        class="hidden w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700 mt-6">
+                    <button type="button" onclick="closeAddSourceModal()"
+                        class="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" id="add-source-btn"
+                        class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-lg">
+                        Add Stream
                     </button>
                 </div>
             </form>
@@ -66,11 +259,7 @@
         <div class="relative max-w-4xl w-full mx-4" onclick="event.stopPropagation()">
             <button onclick="closeImageModal()"
                 class="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                </svg>
+                <i data-lucide="x" class="w-8 h-8"></i>
             </button>
             <img id="modal-img-content" src="" alt="Captured Screenshot"
                 class="w-full h-auto rounded-lg shadow-2xl border border-slate-700">
@@ -87,33 +276,52 @@
         <header
             class="fixed top-0 left-0 right-0 z-40 glass-panel border-b border-slate-700 px-6 py-4 grid grid-cols-3 items-center">
 
-            <!-- Left: Title/Icon -->
-            <div class="flex items-center space-x-3 justify-start">
-                <div class="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        class="text-white">
-                        <path
-                            d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2" />
-                        <circle cx="7" cy="17" r="2" />
-                        <path d="M9 17h6" />
-                        <circle cx="17" cy="17" r="2" />
-                    </svg>
-                </div>
-                <h1 class="text-xl font-bold text-white hidden md:block">ParkAlisto</h1>
+            <!-- Left: Company Logo -->
+            <div class="flex items-center justify-start py-2">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="ParkAlisto Logo"
+                    class="h-9 object-contain">
             </div>
 
-            <!-- Center: Company Logo -->
-            <div class="flex justify-center">
-                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Company Logo"
-                    class="h-12 object-contain">
+            <!-- Center: Search Bar -->
+            <div class="flex justify-center w-full">
+                <div class="relative w-full max-w-md group">
+                    <div
+                        class="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-indigo-500 rounded-full opacity-30 group-hover:opacity-75 transition duration-500 blur">
+                    </div>
+                    <div
+                        class="relative flex items-center bg-slate-900 rounded-full border border-slate-700 p-1 pr-2 shadow-lg">
+                        <div class="pl-3 text-emerald-400">
+                            <i data-lucide="search" class="w-5 h-5"></i>
+                        </div>
+                        <input type="text" id="search-input" placeholder="SEARCH PLATE..."
+                            class="w-full bg-transparent border-0 rounded-full py-1.5 px-3 text-sm text-white focus:outline-none focus:ring-0 font-mono tracking-wider placeholder-slate-500 uppercase">
+                        <button
+                            class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1 rounded-full text-xs font-medium transition-colors border border-slate-600">
+                            GO
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- Right: Status -->
-            <div class="flex items-center space-x-4 justify-end">
-                <div class="flex items-center space-x-2 text-sm text-slate-400">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span id="system-status-text">System Active</span>
+            <div class="flex items-center justify-end space-x-4">
+                <button onclick="openAddSourceModal()"
+                    class="hidden md:flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded-lg text-xs transition-colors shadow-md border border-indigo-500/50 whitespace-nowrap">
+                    <i data-lucide="video" class="w-4 h-4"></i>
+                    <span>Add Camera</span>
+                </button>
+
+                <a href="/monitoring" target="_blank"
+                    class="hidden md:flex items-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded-lg text-xs transition-colors border border-slate-600 whitespace-nowrap">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                    <span>Monitoring</span>
+                </a>
+
+
+
+                <div class="flex items-center space-x-2 pl-4 border-l border-slate-700">
+                    <img src="{{ url_for('static', filename='images/white_lasalle.png') }}" alt="Client Logo"
+                        class="h-8 object-contain opacity-80 hover:opacity-100 transition-opacity">
                 </div>
             </div>
         </header>
@@ -130,32 +338,53 @@
 
                 <!-- Right Column: Video & History -->
                 <div class="xl:col-span-8 space-y-6">
-                    <!-- Video Feed -->
-                    <div
-                        class="bg-slate-800 rounded-2xl overflow-hidden shadow-xl border border-slate-700 relative group">
+                    <!-- Video Feed Grid -->
+                    <div id="video-feed-container"
+                        class="bg-slate-800 rounded-2xl overflow-hidden shadow-xl border border-slate-700 relative group h-[600px] flex flex-col">
+
+
+                        <!-- Header / Controls (Updated to remove text) -->
                         <div
-                            class="absolute top-4 left-4 z-10 bg-black/60 backdrop-blur px-3 py-1 rounded-full flex items-center space-x-2">
-                            <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                            <span class="text-xs font-bold text-white">LIVE FEED</span>
+                            class="grid-header px-4 py-2 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+                            <div
+                                class="flex items-center space-x-2 bg-black/40 px-3 py-1 rounded-full border border-slate-700/50">
+                                <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                                <span class="text-xs font-bold text-emerald-400">LIVE FEED</span>
+                            </div>
+                            <button onclick="toggleGlobalFullscreen()"
+                                class="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-700"
+                                title="Maximize All">
+                                <i data-lucide="maximize" class="w-5 h-5"></i>
+                            </button>
                         </div>
-                        <div class="aspect-video bg-black flex items-center justify-center">
-                            <img id="video-feed" src="" class="w-full h-full object-contain" alt="Live Feed">
+
+                        <div id="video-grid"
+                            class="flex-1 overflow-y-auto p-4 custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Dynamic Video Cells will be injected here by JS -->
+                            <div class="flex items-center justify-center h-full text-slate-500 col-span-full">
+                                <div class="text-center">
+                                    <i data-lucide="camera-off" class="w-12 h-12 mx-auto mb-2 opacity-50"></i>
+                                    <p>No active cameras</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Recent Activity Log -->
                     <div class="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 p-6">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-lg font-semibold text-white flex items-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                    stroke-linejoin="round" class="mr-2 text-indigo-400">
-                                    <path d="M3 10a9.01 9.01 0 1 1 1.7-5.5" />
-                                    <polyline points="12 4 12 10 17 10" />
-                                </svg>
-                                Recent Activity
-                            </h3>
-                            <span class="text-xs text-slate-500 font-mono">Live Log (Max 100)</span>
+                        <div class="mb-5">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-lg font-bold text-white flex items-center tracking-wide">
+                                    <div
+                                        class="p-2 bg-indigo-500/10 rounded-lg mr-3 border border-indigo-500/20 shadow-sm">
+                                        <i data-lucide="history" class="text-indigo-400 w-5 h-5"></i>
+                                    </div>
+                                    RECENT ACTIVITY
+                                </h3>
+                                <span class="text-xs text-slate-500 font-mono hidden">Live Log</span>
+                            </div>
+                            <div class="h-px w-full bg-gradient-to-r from-indigo-500/50 via-slate-700 to-transparent">
+                            </div>
                         </div>
                         <div id="history-list" class="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
                             <!-- History items injected here -->
@@ -166,9 +395,29 @@
         </div>
     </div>
 
+    <!-- ================= SEARCH RESULT MODAL ================= -->
+    <div id="search-modal"
+        class="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center hidden opacity-0 transition-opacity duration-300"
+        onclick="closeSearchModal()">
+        <div class="relative max-w-2xl w-full mx-4 bg-slate-800 rounded-2xl border border-slate-700 shadow-2xl p-6"
+            onclick="event.stopPropagation()">
+            <button onclick="closeSearchModal()"
+                class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+                <i data-lucide="x" class="w-6 h-6"></i>
+            </button>
+            <h2 class="text-xl font-bold text-white mb-4 flex items-center">
+                <i data-lucide="search" class="mr-2 text-indigo-400 w-6 h-6"></i>
+                Search Results
+            </h2>
+            <div id="search-results-list" class="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                <!-- Results injected here -->
+            </div>
+        </div>
+    </div>
+
     <!-- JAVASCRIPT LOGIC -->
     <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=3"></script>
 </body>
 
 </html>

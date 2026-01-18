@@ -6,12 +6,12 @@ let lotCount = 0;
 function addLotRow() {
     const container = document.getElementById('lots-config-container');
     const rowId = lotCount++;
-    
+
     const html = `
         <div class="bg-slate-900/50 p-6 rounded-xl border border-slate-700 relative fade-in" id="row-${rowId}">
             <div class="absolute top-4 right-4">
                 <button type="button" onclick="removeLotRow(${rowId})" class="text-slate-500 hover:text-red-400 transition-colors" ${rowId === 0 ? 'disabled style="opacity:0.3"' : ''}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    <i data-lucide="trash-2" class="w-5 h-5"></i>
                 </button>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -40,13 +40,15 @@ function addLotRow() {
         </div>
     `;
     container.insertAdjacentHTML('beforeend', html);
+    lucide.createIcons();
 }
 
 function removeLotRow(id) {
     document.getElementById(`row-${id}`).remove();
 }
 
-function toggleVideoInput(id, type) {
+// Explicitly attach to window to ensure access from inline HTML handler
+window.toggleVideoInput = function (id, type) {
     const fileInput = document.getElementById(`vid-file-${id}`);
     const urlInput = document.getElementById(`vid-url-${id}`);
     if (type === 'file') {
@@ -84,11 +86,11 @@ document.getElementById('config-form').addEventListener('submit', async (e) => {
     btn.disabled = true;
 
     const formData = new FormData(e.target);
-    
+
     try {
         const res = await fetch(`${API_BASE}/configure`, { method: 'POST', body: formData });
         const result = await res.json();
-        
+
         if (result.success) {
             document.getElementById('setup-wizard').classList.add('hidden');
             showDashboard();
@@ -106,13 +108,14 @@ document.getElementById('config-form').addEventListener('submit', async (e) => {
 
 function showDashboard() {
     document.getElementById('dashboard').classList.remove('hidden');
-    document.getElementById('video-feed').src = `${API_BASE}/video_feed`;
-    
+    // document.getElementById('video-feed').src = `${API_BASE}/video_feed`; // REMOVED legacy single feed
+
     // Reduced polling rate slightly to ease load, but updates will be smooth
     setInterval(updateData, 2000);
     setInterval(updateHistory, 2500);
     updateData();
     updateHistory();
+    lucide.createIcons();
 }
 
 // --- Dashboard Smart Updating (Fixed Glitching) ---
@@ -122,6 +125,9 @@ async function updateData() {
         const lots = await res.json();
         const container = document.getElementById('stats-container');
 
+        // Render/Update Video Grid
+        renderVideoGrid(lots);
+
         if (container.children.length === 1 && container.children[0].innerText.includes("Waiting")) {
             container.innerHTML = "";
         }
@@ -130,7 +136,7 @@ async function updateData() {
             let card = document.getElementById(`lot-card-${lot.lot_id}`);
             const percentFull = lot.total > 0 ? Math.round((lot.occupied / lot.total) * 100) : 0;
             const available = Math.max(0, lot.total - lot.occupied);
-            
+
             if (!card) {
                 const html = `
                     <div id="lot-card-${lot.lot_id}" class="bg-slate-800 rounded-2xl p-6 border border-slate-700 shadow-lg fade-in">
@@ -164,7 +170,7 @@ async function updateData() {
                 document.getElementById(`occ-${lot.lot_id}`).innerText = lot.occupied;
                 document.getElementById(`badge-${lot.lot_id}`).innerText = `${percentFull}% Full`;
                 document.getElementById(`bar-${lot.lot_id}`).style.width = `${percentFull}%`;
-                
+
                 const bar = document.getElementById(`bar-${lot.lot_id}`);
                 if (percentFull > 90) bar.className = "h-full bg-red-500 transition-all duration-500";
                 else if (percentFull > 70) bar.className = "h-full bg-yellow-500 transition-all duration-500";
@@ -174,6 +180,7 @@ async function updateData() {
     } catch (e) { console.error(e); }
 }
 
+// --- Smart History Update (DOM Diffing to Fix Flashing) ---
 // --- Smart History Update (DOM Diffing to Fix Flashing) ---
 async function updateHistory() {
     try {
@@ -186,110 +193,119 @@ async function updateHistory() {
             return;
         }
 
-        // 1. Identify which IDs are currently in the new data
         const newIds = new Set(history.map(item => item.unique_id || `temp-${item.timestamp_in}-${item.spot_id}`));
 
-        // 2. Remove items from DOM that are no longer in the data (or beyond limit)
         Array.from(list.children).forEach(child => {
-            // Ignore the "No activity" message div
-            if (child.id && !newIds.has(child.id)) {
+            // Remove if not in new data OR if it's the "No activity" placeholder (which has no ID)
+            if ((child.id && !newIds.has(child.id)) || !child.id) {
                 child.remove();
             }
         });
 
-        // 3. Add or Update items
         history.forEach((item, index) => {
             const uniqueId = item.unique_id || `temp-${item.timestamp_in}-${item.spot_id}`;
             let existingEl = document.getElementById(uniqueId);
 
-            const isParked = item.is_active;
-            const iconColor = isParked ? 'text-emerald-400' : 'text-slate-400';
-            const borderColor = isParked ? 'border-emerald-500/20' : 'border-slate-700';
-            const bg = isParked ? 'bg-emerald-500/5' : 'bg-slate-800';
-            
-            let plateDisplay = item.plate_number;
-            if(plateDisplay === "Waiting...") plateDisplay = `<span class="animate-pulse text-yellow-400">Scanning...</span>`;
-            if(item.processing_status === 'queued') plateDisplay = `<span class="animate-pulse text-indigo-400">Processing...</span>`;
+            // Parse Time
+            let timeDisplay = item.timestamp_in;
+            try {
+                // Backend Format: "%I:%M:%S %p %B %d, %Y" -> "04:45:00 PM January 18, 2026"
+                let parts = timeDisplay.split(' ');
+                if (parts.length >= 2) {
+                    let timePart = parts[0]; // "04:45:00"
+                    let ampmPart = parts[1]; // "PM"
 
-            // Screenshot Button Logic
+                    // Extract HH:MM
+                    let hhmm = timePart.substring(0, 5);
+                    timeDisplay = `${hhmm} ${ampmPart}`;
+                }
+            } catch (e) {
+                console.error("Time Parse Error", e);
+                // Fallback: just show first part
+                timeDisplay = item.timestamp_in.split(' ')[0];
+            }
+
+            const isParked = item.is_active;
+            const statusColor = isParked ? 'text-emerald-400' : 'text-slate-500';
+            const statusBg = isParked ? 'bg-emerald-500/10' : 'bg-slate-700/30';
+            const statusBorder = isParked ? 'border-emerald-500/20' : 'border-dashed border-slate-700';
+            const iconName = isParked ? 'arrow-right-circle' : 'check-circle-2';
+
+            let plateDisplay = item.plate_number;
+            if (plateDisplay === "Waiting...") plateDisplay = `<span class="animate-pulse text-yellow-400 text-xs">SCANNING...</span>`;
+            if (item.processing_status === 'queued') plateDisplay = `<span class="animate-pulse text-indigo-400 text-xs">PROCESSING...</span>`;
+
             let viewBtn = '';
             if (item.plate_image && item.plate_image !== 'None' && item.plate_image !== 'N/A') {
                 viewBtn = `
                     <button onclick="openImageModal('${item.plate_image}', '${item.plate_number}')" 
-                            class="ml-2 px-2 py-1 text-xs font-semibold bg-indigo-500/20 text-indigo-300 rounded hover:bg-indigo-500/30 transition-colors flex items-center gap-1 border border-indigo-500/30">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                        View
+                            class="p-1.5 hover:bg-slate-700 rounded-md text-slate-400 hover:text-indigo-400 transition-colors" title="View Snapshot">
+                        <i data-lucide="image" class="w-4 h-4"></i>
                     </button>
                 `;
             }
 
             const innerHTMLContent = `
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-3">
-                        <div class="p-2 rounded-lg bg-slate-900 ${iconColor}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>
-                        </div>
-                        <div>
-                            <div class="text-sm font-bold text-white flex items-center">
-                                ${plateDisplay}
-                                ${viewBtn}
-                            </div>
-                            <div class="text-xs text-slate-400">${item.vehicle_type} • ${item.color}</div>
-                        </div>
+                <div class="flex items-center gap-3">
+                    <div class="flex flex-col items-center min-w-[50px]">
+                        <span class="text-sm font-bold text-slate-300 font-mono">${timeDisplay}</span>
+                        <div class="h-full w-px bg-slate-800 my-1 group-last:hidden"></div>
                     </div>
-                    <div class="text-right">
-                        <div class="text-xs font-bold text-slate-300">Spot ${item.spot_id}</div>
-                        <div class="text-xs text-slate-500">${item.timestamp_in.split(' ')[0]}</div>
+                    <div class="flex-1 bg-slate-900/50 border ${statusBorder} rounded-xl p-3 flex items-center justify-between hover:bg-slate-800 transition-all group-hover:shadow-md">
+                        <div class="flex items-center gap-3">
+                            <div class="p-2 rounded-full ${statusBg} ${statusColor}">
+                                <i data-lucide="${iconName}" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <div class="text-sm font-bold text-white tracking-wide flex items-center gap-2">
+                                    ${plateDisplay}
+                                    ${isParked ? '<span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 rounded uppercase font-bold">In</span>' : ''}
+                                </div>
+                                <div class="text-xs text-slate-500 flex items-center gap-2">
+                                    <span class="uppercase">${item.vehicle_type}</span>
+                                    <span>•</span>
+                                    <span>${item.color}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-right flex items-center gap-3">
+                             <div class="text-right">
+                                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Spot ${item.spot_id}</div>
+                                <div class="text-[10px] text-slate-600">ID: ${item.lot_id}</div>
+                             </div>
+                             ${viewBtn}
+                        </div>
                     </div>
                 </div>
             `;
 
-            if (!existingEl) {
-                // Create New Element
-                const newEl = document.createElement('div');
-                newEl.id = uniqueId;
-                newEl.className = `p-3 rounded-xl border ${borderColor} ${bg} list-item-enter`;
-                newEl.innerHTML = innerHTMLContent;
-                
-                // Insert at correct position (usually top)
-                if (index === 0) {
-                    list.prepend(newEl);
-                } else {
-                    // Find the element before this one in the new array
-                    const prevItem = history[index-1];
-                    const prevEl = document.getElementById(prevItem.unique_id);
-                    if (prevEl) {
-                        prevEl.after(newEl);
-                    } else {
-                        list.appendChild(newEl);
-                    }
+            if (existingEl) {
+                if (existingEl.innerHTML !== innerHTMLContent) {
+                    existingEl.innerHTML = innerHTMLContent;
                 }
             } else {
-                // Update existing element
-                if (!existingEl.innerHTML.includes(plateDisplay)) {
-                     existingEl.innerHTML = innerHTMLContent;
-                     existingEl.className = `p-3 rounded-xl border ${borderColor} ${bg}`; // Remove animation class on update
-                }
+                const el = document.createElement('div');
+                el.id = uniqueId;
+                el.className = "group fade-in";
+                el.innerHTML = innerHTMLContent;
+                list.appendChild(el);
             }
         });
 
-        // 4. Client-side limit enforcement
-        while (list.children.length > 100) {
-            list.lastElementChild.remove();
-        }
-
+        lucide.createIcons();
     } catch (e) { console.error(e); }
 }
 
+// --- Image Modal Logic ---
 // --- Image Modal Logic ---
 function openImageModal(filename, plate) {
     const modal = document.getElementById('image-modal');
     const img = document.getElementById('modal-img-content');
     const cap = document.getElementById('modal-caption');
-    
+
     img.src = `${API_BASE}/plate_screenshots/${filename}`;
     cap.innerText = `Plate: ${plate}`;
-    
+
     modal.classList.remove('hidden');
     // Force reflow
     void modal.offsetWidth;
@@ -303,7 +319,265 @@ function closeImageModal() {
         modal.classList.add('hidden');
         document.getElementById('modal-img-content').src = ''; // clear memory
     }, 300);
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        document.getElementById('modal-img-content').src = ''; // clear memory
+    }, 300);
+}
+
+
+
+// --- Add Source Modal Logic ---
+function openAddSourceModal() {
+    document.getElementById('add-source-modal').classList.remove('hidden');
+}
+
+function closeAddSourceModal() {
+    document.getElementById('add-source-modal').classList.add('hidden');
+    document.getElementById('add-source-form').reset();
+    toggleAddSourceVideoInput('file'); // Reset view
+}
+
+window.toggleAddSourceVideoInput = function (type) {
+    // Backwards compatibility if called directly
+    const fileInput = document.getElementById('add-vid-file');
+    const urlInput = document.getElementById('add-vid-url');
+    if (type === 'file') {
+        fileInput.classList.remove('hidden');
+        urlInput.classList.add('hidden');
+    } else {
+        fileInput.classList.add('hidden');
+        urlInput.classList.remove('hidden');
+    }
+}
+
+// Ensure robust event handling
+document.addEventListener('DOMContentLoaded', () => {
+    const select = document.getElementById('video-type-select'); // Need to ID this element first in HTML if not present, checking...
+    // Wait, previous REPLACE failed on HTML too.
+    // Let's just rely on the existing window function which IS correct, but maybe cached.
+    // The problem might be the HTML select doesn't pass 'this.value' correctly? No that's standard.
+    // Re-asserting the window function is fine.
+});
+
+document.getElementById('add-source-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('add-source-btn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = `<div class="spinner mr-2"></div> Adding...`;
+    btn.disabled = true;
+
+    const formData = new FormData(e.target);
+
+    try {
+        const res = await fetch(`${API_BASE}/add_source`, { method: 'POST', body: formData });
+        const result = await res.json();
+
+        if (result.success) {
+            closeAddSourceModal();
+            // No need to manually refresh, the existing updateData loop will pick up the new lot
+            // appearing in the /data endpoint response.
+        } else {
+            alert('Error: ' + result.message);
+        }
+    } catch (err) {
+        alert('Connection Failed: ' + err.message);
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+});
+
+// --- Search Logic ---
+const searchInput = document.getElementById('search-input');
+if (searchInput) {
+    searchInput.addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const query = searchInput.value.trim();
+            if (!query) return;
+
+            // Show loading or similar feedback if desired
+            searchInput.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/search?plate=${encodeURIComponent(query)}`);
+                const results = await res.json();
+
+                openSearchModal(results, query);
+            } catch (err) {
+                console.error("Search failed", err);
+                alert("Search failed. Check console.");
+            } finally {
+                searchInput.disabled = false;
+                searchInput.focus();
+            }
+        }
+    });
+}
+
+function openSearchModal(results, query) {
+    const modal = document.getElementById('search-modal');
+    const list = document.getElementById('search-results-list');
+    list.innerHTML = ''; // Clear previous
+
+    if (results.length === 0) {
+        list.innerHTML = `
+        <div class="text-center py-8 text-slate-400">
+                <i data-lucide="search-x" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                <p>No results found for "${query}"</p>
+            </div>
+            `;
+    } else {
+        results.forEach(item => {
+            const timeIn = item.timestamp_in || 'N/A';
+            const timeOut = item.timestamp_out || 'Active';
+            // Determine if 'Active' means currently parked -> check is_active or timestamp_out
+            // If item has no timestamp_out, it's likely still likely there? 
+            // The item comes from history which may include active sessions depending on implementation.
+
+            let statusBadge = '<span class="px-2 py-1 bg-emerald-500/20 text-emerald-400 text-xs rounded-full">Parked</span>';
+            if (timeOut !== 'Active' && timeOut !== '') {
+                statusBadge = '<span class="px-2 py-1 bg-slate-700 text-slate-400 text-xs rounded-full">Departed</span>';
+            }
+
+            const html = `
+                <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700 flex flex-col sm:flex-row gap-4">
+                    <div class="flex-shrink-0 w-full sm:w-32 h-24 bg-black rounded-lg overflow-hidden border border-slate-600 relative">
+                        ${item.plate_image
+                    ? `<img src="${API_BASE}/plate_screenshots/${item.plate_image}" class="w-full h-full object-contain cursor-pointer" onclick="openImageModal('${item.plate_image}', '${item.plate_number}')">`
+                    : `<div class="flex items-center justify-center h-full text-slate-500 text-xs text-center p-2">No Image</div>`
+                }
+                    </div>
+                    <div class="flex-grow">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <h3 class="font-bold text-white text-lg">${item.plate_number}</h3>
+                                <div class="text-xs text-slate-400">Lot: ${item.lot_name || 'Total'} | Spot ${item.spot_id}</div>
+                            </div>
+                            ${statusBadge}
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm text-slate-300">
+                             <div><span class="text-slate-500">In:</span> ${timeIn}</div>
+                             <div><span class="text-slate-500">Out:</span> ${timeOut}</div>
+                             <div><span class="text-slate-500">Vehicle:</span> ${item.vehicle_type || 'Unknown'}</div>
+                             <div><span class="text-slate-500">Color:</span> ${item.color || 'Unknown'}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', html);
+        });
+    }
+
+    modal.classList.remove('hidden');
+    // Reflow
+    void modal.offsetWidth;
+    modal.classList.remove('opacity-0');
+    lucide.createIcons();
+}
+
+function closeSearchModal() {
+    const modal = document.getElementById('search-modal');
+    modal.classList.add('opacity-0');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300);
 }
 
 // Init
 checkStatus();
+
+// --- Video Grid Logic ---
+function renderVideoGrid(lots) {
+    const grid = document.getElementById('video-grid');
+
+    // ADJUST GRID LAYOUT DYNAMICALLY
+    // If 1 lot, use 1 col. If more, use 2 cols (md+).
+    if (lots.length <= 1) {
+        grid.className = "flex-1 overflow-y-auto p-4 custom-scrollbar grid grid-cols-1 gap-4";
+    } else {
+        grid.className = "flex-1 overflow-y-auto p-4 custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-4";
+    }
+
+    // Clear "No active cameras" placeholder if we have lots
+    if (lots.length > 0 && grid.children.length === 1 && grid.children[0].innerText.includes("No active")) {
+        grid.innerHTML = "";
+    }
+
+    lots.forEach(lot => {
+        let cell = document.getElementById(`video-cell-${lot.lot_id}`);
+
+        if (!cell) {
+            const html = `
+        <div id="video-cell-${lot.lot_id}" class="video-cell group" onclick="toggleFullscreen(${lot.lot_id}, event)">
+            <img src="${API_BASE}/video_feed/${lot.lot_id}" alt="${lot.lot_name}" loading="lazy" onerror="this.onerror=null; this.src='${API_BASE}/static/images/logo.png'">
+
+            <div class="lot-info-overlay group-hover:opacity-100 transition-opacity">
+                <i data-lucide="video" class="w-3 h-3 text-emerald-400"></i>
+                <span class="font-mono text-xs text-white tracking-wide">${lot.lot_name}</span>
+            </div>
+        </div>
+            `;
+            grid.insertAdjacentHTML('beforeend', html);
+            lucide.createIcons();
+        }
+    });
+}
+
+function toggleFullscreen(lotId, event) {
+    // If clicking button inside, let it bubble or handle specific?
+    // Actually the whole cell click triggers this.
+
+    const cell = document.getElementById(`video - cell - ${lotId}`);
+    if (!cell) return;
+
+    // Toggle active fullscreen class
+    if (cell.classList.contains('fullscreen-view')) {
+        cell.classList.remove('fullscreen-view');
+        // Remove close button
+        const closeBtn = cell.querySelector('.fullscreen-close');
+        if (closeBtn) closeBtn.remove();
+    } else {
+        cell.classList.add('fullscreen-view');
+        // Add close button if not exists
+        if (!cell.querySelector('.fullscreen-close')) {
+            const closeBtn = document.createElement('div');
+            closeBtn.className = 'fullscreen-close';
+            closeBtn.innerHTML = '<i data-lucide="x" class="w-6 h-6"></i>';
+            closeBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleFullscreen(lotId);
+            };
+            cell.appendChild(closeBtn);
+            lucide.createIcons();
+        }
+    }
+}
+
+function toggleGlobalFullscreen() {
+    const container = document.getElementById('video-feed-container');
+    if (container.classList.contains('fullscreen-view')) {
+        container.classList.remove('fullscreen-view');
+        // Restore grid layout
+        container.style.padding = "";
+        const closeBtn = container.querySelector('.global-close');
+        if (closeBtn) closeBtn.remove();
+    } else {
+        container.classList.add('fullscreen-view');
+        // Ensure grid takes full space
+        container.style.display = "flex";
+        container.style.flexDirection = "column";
+
+        const closeBtn = document.createElement('div');
+        closeBtn.className = 'fullscreen-close global-close';
+        closeBtn.innerHTML = '<i data-lucide="minimize-2" class="w-6 h-6"></i>';
+        closeBtn.style.top = "10px";
+        closeBtn.style.right = "10px";
+        closeBtn.onclick = (e) => {
+            e.stopPropagation();
+            toggleGlobalFullscreen();
+        };
+        container.appendChild(closeBtn);
+        lucide.createIcons();
+    }
+}
